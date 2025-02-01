@@ -1,30 +1,38 @@
-;; CityStack Smart Contract Architecture - Urban Planning Features
+;; CityStack Smart Contract Architecture
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Contract Owner
+(define-data-var contract-owner (optional principal) none)
+
+;; Initialize contract
+(define-public (initialize (owner principal))
+    (begin
+        (asserts! (is-none (var-get contract-owner)) ERR-ALREADY-INITIALIZED)
+        (var-set contract-owner (some owner))
+        (ok true)
+    )
+)
+
+;; Check contract owner
+(define-private (is-contract-owner (caller principal))
+    (let ((owner (unwrap! (var-get contract-owner) false)))
+        (is-eq caller owner)
+    )
+)
+
 ;; Constants and Variables
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(define-constant ERR-ALREADY-INITIALIZED (err u1000))
+(define-constant ERR-NOT-AUTHORIZED (err u1001))
+(define-constant ERR-INVALID-PROPOSAL (err u1002))
+(define-constant ERR-NO-PROPERTY (err u1003))
+(define-constant ERR-ALREADY-REGISTERED (err u1004))
+(define-constant ERR-INVALID-LOCATION (err u1005))
+(define-constant ERR-ZONE-NOT-FOUND (err u1006))
+(define-constant ERR-INSUFFICIENT-RESOURCES (err u1007))
 
 (define-data-var proposal-counter uint u0)
-(define-data-var contract-owner principal tx-sender)
 (define-data-var min-voting-power uint u100)
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Error Codes
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(define-constant ERR-NOT-AUTHORIZED (err u1000))
-(define-constant ERR-INVALID-PROPOSAL (err u1001))
-(define-constant ERR-NO-PROPERTY (err u1002))
-(define-constant ERR-ALREADY-REGISTERED (err u1003))
-(define-constant ERR-INVALID-LOCATION (err u1004))
-(define-constant ERR-ZONE-NOT-FOUND (err u1005))
-(define-constant ERR-INSUFFICIENT-RESOURCES (err u1006))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Data Maps
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-;; Zone Registry
 (define-map zones 
     (string-utf8 10) 
     {
@@ -35,7 +43,6 @@
     }
 )
 
-;; Property Registry
 (define-map properties 
     principal 
     {
@@ -48,7 +55,6 @@
     }
 )
 
-;; Proposal Storage with Resource Requirements
 (define-map proposals 
     uint 
     {
@@ -64,23 +70,19 @@
     }
 )
 
-;; Vote Tracking
 (define-map votes
     {voter: principal, proposal-id: uint}
     {amount: uint, direction: bool}
 )
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Zone Management
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
 (define-public (add-zone 
     (zone-id (string-utf8 10))
     (name (string-utf8 50))
     (resource-limit uint)
     (development-type (string-utf8 20)))
     (begin
-        (asserts! (is-eq tx-sender contract-owner) ERR-NOT-AUTHORIZED)
+        (asserts! (is-contract-owner tx-sender) ERR-NOT-AUTHORIZED)
         (ok (map-set zones zone-id {
             name: name,
             resource-limit: resource-limit,
@@ -94,20 +96,14 @@
     (map-get? zones zone-id)
 )
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Property Registration
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
 (define-public (register-property 
     (zone (string-utf8 10))
     (area uint))
     (let
         ((caller tx-sender))
-        ;; Check if property not already registered
         (asserts! (is-none (map-get? properties caller)) ERR-ALREADY-REGISTERED)
-        ;; Verify zone exists
         (asserts! (is-some (map-get? zones zone)) ERR-ZONE-NOT-FOUND)
-        ;; Verify valid zone
         (asserts! (> (len zone) u0) ERR-INVALID-LOCATION)
         
         (ok (map-set properties 
@@ -123,10 +119,7 @@
     )
 )
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Enhanced Proposal System
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
+;; Proposal System
 (define-public (create-proposal
     (title (string-utf8 100))
     (description (string-utf8 500))
@@ -137,9 +130,7 @@
          (proposal-id (+ (var-get proposal-counter) u1))
          (zone-data (unwrap! (map-get? zones zone) ERR-ZONE-NOT-FOUND)))
         
-        ;; Must have registered property to create proposal
         (asserts! (is-some (map-get? properties caller)) ERR-NO-PROPERTY)
-        ;; Check if zone has enough resources
         (asserts! (<= (+ (get used-resources zone-data) resources) 
                      (get resource-limit zone-data)) 
                  ERR-INSUFFICIENT-RESOURCES)
@@ -163,6 +154,7 @@
     )
 )
 
+;; Voting System
 (define-public (vote
     (proposal-id uint)
     (vote-for bool))
@@ -172,16 +164,13 @@
          (voting-power (get voting-power property))
          (current-proposal (unwrap! (map-get? proposals proposal-id) ERR-INVALID-PROPOSAL)))
         
-        ;; Check if already voted
         (asserts! (is-none (map-get? votes {voter: caller, proposal-id: proposal-id})) 
             ERR-NOT-AUTHORIZED)
         
-        ;; Record the vote
         (map-set votes 
             {voter: caller, proposal-id: proposal-id}
             {amount: voting-power, direction: vote-for})
         
-        ;; Update proposal votes
         (let
             ((updated-proposal (merge current-proposal 
                 {
@@ -196,10 +185,7 @@
     )
 )
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Read-Only Functions
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
 (define-read-only (get-proposal (proposal-id uint))
     (map-get? proposals proposal-id)
 )
@@ -212,11 +198,7 @@
     (map-get? votes {voter: voter, proposal-id: proposal-id})
 )
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Private Functions
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
 (define-private (calculate-voting-power (area uint))
-    ;; Simple voting power calculation based on area
     (+ (/ area u100) u1)
 )

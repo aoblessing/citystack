@@ -19,12 +19,6 @@
 (define-constant ERR-INVALID-LOCATION (err u1004))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Constants
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(define-constant STATUS-ACTIVE u"active")
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Data Maps
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -111,7 +105,7 @@
                 votes-for: u0,
                 votes-against: u0,
                 created-at: block-height,
-                status: STATUS-ACTIVE
+                status: u"active"
             }
         )
         (var-set proposal-counter proposal-id)
@@ -138,12 +132,17 @@
             {amount: voting-power, direction: vote-for})
         
         ;; Update proposal votes
-        (ok (map-set proposals 
-            proposal-id
-            (merge current-proposal 
-                (if vote-for
-                    {votes-for: (+ (get votes-for current-proposal) voting-power)}
-                    {votes-against: (+ (get votes-against current-proposal) voting-power)}))))
+        (let
+            ((updated-proposal (merge current-proposal 
+                {
+                    votes-for: (if vote-for 
+                        (+ (get votes-for current-proposal) voting-power)
+                        (get votes-for current-proposal)),
+                    votes-against: (if vote-for
+                        (get votes-against current-proposal)
+                        (+ (get votes-against current-proposal) voting-power))
+                })))
+            (ok (map-set proposals proposal-id updated-proposal)))
     )
 )
 

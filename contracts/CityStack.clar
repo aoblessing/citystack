@@ -1,4 +1,4 @@
-;; CityStack Smart Contract Architecture - Fixed Version
+;; CityStack Smart Contract Architecture - Urban Planning Features
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Constants and Variables
@@ -17,10 +17,23 @@
 (define-constant ERR-NO-PROPERTY (err u1002))
 (define-constant ERR-ALREADY-REGISTERED (err u1003))
 (define-constant ERR-INVALID-LOCATION (err u1004))
+(define-constant ERR-ZONE-NOT-FOUND (err u1005))
+(define-constant ERR-INSUFFICIENT-RESOURCES (err u1006))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Data Maps
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; Zone Registry
+(define-map zones 
+    (string-utf8 10) 
+    {
+        name: (string-utf8 50),
+        resource-limit: uint,
+        used-resources: uint,
+        development-type: (string-utf8 20)
+    }
+)
 
 ;; Property Registry
 (define-map properties 
@@ -35,7 +48,7 @@
     }
 )
 
-;; Proposal Storage
+;; Proposal Storage with Resource Requirements
 (define-map proposals 
     uint 
     {
@@ -45,7 +58,9 @@
         votes-for: uint,
         votes-against: uint,
         created-at: uint,
-        status: (string-utf8 20)
+        status: (string-utf8 20),
+        zone: (string-utf8 10),
+        resources-required: uint
     }
 )
 
@@ -53,6 +68,30 @@
 (define-map votes
     {voter: principal, proposal-id: uint}
     {amount: uint, direction: bool}
+)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Zone Management
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define-public (add-zone 
+    (zone-id (string-utf8 10))
+    (name (string-utf8 50))
+    (resource-limit uint)
+    (development-type (string-utf8 20)))
+    (begin
+        (asserts! (is-eq tx-sender contract-owner) ERR-NOT-AUTHORIZED)
+        (ok (map-set zones zone-id {
+            name: name,
+            resource-limit: resource-limit,
+            used-resources: u0,
+            development-type: development-type
+        }))
+    )
+)
+
+(define-read-only (get-zone (zone-id (string-utf8 10)))
+    (map-get? zones zone-id)
 )
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -66,6 +105,8 @@
         ((caller tx-sender))
         ;; Check if property not already registered
         (asserts! (is-none (map-get? properties caller)) ERR-ALREADY-REGISTERED)
+        ;; Verify zone exists
+        (asserts! (is-some (map-get? zones zone)) ERR-ZONE-NOT-FOUND)
         ;; Verify valid zone
         (asserts! (> (len zone) u0) ERR-INVALID-LOCATION)
         
@@ -83,18 +124,25 @@
 )
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Proposal System
+;; Enhanced Proposal System
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define-public (create-proposal
     (title (string-utf8 100))
-    (description (string-utf8 500)))
+    (description (string-utf8 500))
+    (zone (string-utf8 10))
+    (resources uint))
     (let
         ((caller tx-sender)
-         (proposal-id (+ (var-get proposal-counter) u1)))
+         (proposal-id (+ (var-get proposal-counter) u1))
+         (zone-data (unwrap! (map-get? zones zone) ERR-ZONE-NOT-FOUND)))
         
         ;; Must have registered property to create proposal
         (asserts! (is-some (map-get? properties caller)) ERR-NO-PROPERTY)
+        ;; Check if zone has enough resources
+        (asserts! (<= (+ (get used-resources zone-data) resources) 
+                     (get resource-limit zone-data)) 
+                 ERR-INSUFFICIENT-RESOURCES)
         
         (map-set proposals 
             proposal-id
@@ -105,7 +153,9 @@
                 votes-for: u0,
                 votes-against: u0,
                 created-at: block-height,
-                status: u"active"
+                status: u"active",
+                zone: zone,
+                resources-required: resources
             }
         )
         (var-set proposal-counter proposal-id)

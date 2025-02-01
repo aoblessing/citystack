@@ -1,4 +1,4 @@
-;; CityStack Smart Contract Architecture - Step 1: Property and Voting
+;; CityStack Smart Contract Architecture - Fixed Version
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Constants and Variables
@@ -17,6 +17,12 @@
 (define-constant ERR-NO-PROPERTY (err u1002))
 (define-constant ERR-ALREADY-REGISTERED (err u1003))
 (define-constant ERR-INVALID-LOCATION (err u1004))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Constants
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define-constant STATUS-ACTIVE u"active")
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Data Maps
@@ -66,7 +72,7 @@
         ((caller tx-sender))
         ;; Check if property not already registered
         (asserts! (is-none (map-get? properties caller)) ERR-ALREADY-REGISTERED)
-        ;; Verify valid zone (you can add more validation)
+        ;; Verify valid zone
         (asserts! (> (len zone) u0) ERR-INVALID-LOCATION)
         
         (ok (map-set properties 
@@ -105,7 +111,7 @@
                 votes-for: u0,
                 votes-against: u0,
                 created-at: block-height,
-                status: "active"
+                status: STATUS-ACTIVE
             }
         )
         (var-set proposal-counter proposal-id)
@@ -118,8 +124,8 @@
     (vote-for bool))
     (let
         ((caller tx-sender)
-         (proposal (unwrap! (map-get? properties caller) ERR-NO-PROPERTY))
-         (voting-power (get voting-power proposal))
+         (property (unwrap! (map-get? properties caller) ERR-NO-PROPERTY))
+         (voting-power (get voting-power property))
          (current-proposal (unwrap! (map-get? proposals proposal-id) ERR-INVALID-PROPOSAL)))
         
         ;; Check if already voted
@@ -163,6 +169,5 @@
 
 (define-private (calculate-voting-power (area uint))
     ;; Simple voting power calculation based on area
-    ;; Can be made more complex with zone multipliers later
     (+ (/ area u100) u1)
 )
